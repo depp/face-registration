@@ -1,4 +1,5 @@
 import os
+import urllib
 
 # PIL
 import Image as pil_image
@@ -31,15 +32,15 @@ def find_images(path):
             base, ext = os.path.splitext(filename)
             if ext.lower() not in extensions:
                 continue
-            fullpath = os.path.join(dirpath, filename)
-            relpath = os.path.relpath(fullpath, path)
-            yield Image(relpath, fullpath)
+            imagepath = os.path.join(dirpath, filename)
+            uri = urllib.pathname2url(os.path.relpath(imagepath, path))
+            yield Image(imagepath, uri)
 
 class Image(object):
-    __slots__ = ['relpath', 'fullpath']
-    def __init__(self, relpath, fullpath):
-        self.relpath = relpath
-        self.fullpath = fullpath
+    __slots__ = ['path', 'uri']
+    def __init__(self, path, uri):
+        self.path = path
+        self.uri = uri
 
     @property
     def type(self):
@@ -47,7 +48,7 @@ class Image(object):
 
         This will be None if the mime type could not be detected.
         """
-        base, ext = os.path.splitext(self.relpath)
+        base, ext = os.path.splitext(self.path)
         return TYPES.get(ext.lower())
 
     def get_exif(self):
@@ -55,7 +56,7 @@ class Image(object):
         if self.type != 'image/jpeg':
             return None
         try:
-            image = pil_image.open(self.fullpath)
+            image = pil_image.open(self.path)
         except IOError:
             return None
         return image._getexif()

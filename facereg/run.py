@@ -15,7 +15,7 @@ class App(object):
     def __init__(self, picture_path):
         self.picture_path = os.path.abspath(picture_path)
         for img in image.find_images(self.picture_path):
-            print img.relpath, img.get_orientation()
+            print img.uri, img.get_orientation()
         sys.exit(0)
 
     @classmethod
