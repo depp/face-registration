@@ -1,38 +1,48 @@
 from wsgiref.simple_server import make_server
 from pyramid.config import Configurator
 from pyramid.response import Response
+from pyramid.view import view_config
 import argparse
 import os
 import sys
 from . import image
 
-def hello_world(request):
-    return Response('Hello %(name)s!' % request.matchdict)
+srcdir = os.path.dirname(os.path.abspath(__file__))
 
-class App(object):
+class ImageSet(object):
     __slots__ = ['picture_path', 'images']
 
     def __init__(self, picture_path):
         self.picture_path = os.path.abspath(picture_path)
-        for img in image.find_images(self.picture_path):
-            print img.uri, img.get_orientation()
-        sys.exit(0)
+        self.images = list(image.find_images(self.picture_path))
 
-    @classmethod
-    def parse_args(class_):
-        p = argparse.ArgumentParser()
-        p.add_argument('picture_path')
-        args = p.parse_args()
-        return class_(args.picture_path)
+def hello_world(request):
+    return Response('Hello %(name)s!' % request.matchdict)
 
-    def run(self):
-        config = Configurator()
-        config.add_route('hello', '/hello/{name}')
-        config.add_view(hello_world, route_name='hello')
-        config.add_static_view(name='pictures', path=self.picture_path)
-        app = config.make_wsgi_app()
-        server = make_server('0.0.0.0', 8080, app)
-        server.serve_forever()
+@view_config(route_name='all', renderer='all.mako')
+def all_view(self, request):
+    return {'images': DATA.images}
+
+def init():
+    p = argparse.ArgumentParser()
+    p.add_argument('picture_path')
+    args = p.parse_args()
+    global DATA
+    DATA = ImageSet(args.picture_path)
+
+def run():
+    init()
+    settings = {
+        'reload_all': True,
+        'debug_all': True,
+        'mako.directories': os.path.join(srcdir, 'templates'),
+    }
+    config = Configurator(settings=settings)
+    config.add_route('all', '/all')
+    config.scan()
+    app = config.make_wsgi_app()
+    server = make_server('0.0.0.0', 8080, app)
+    server.serve_forever()
 
 if __name__ == '__main__':
-    App.parse_args().run()
+    run()
