@@ -44,6 +44,7 @@ def run():
         'mako.directories': os.path.join(srcdir, 'templates'),
     }
     config = Configurator(settings=settings)
+    config.add_static_view('static', os.path.join(srcdir, 'static'))
     config.add_static_view('image-data', DATA.picture_path)
     config.add_route('all', '/image')
     config.add_route('image', '/image/{id}')
