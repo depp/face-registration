@@ -23,6 +23,12 @@ def hello_world(request):
 def all_view(self, request):
     return {'images': DATA.images}
 
+@view_config(route_name='image', renderer='image.mako')
+def image_view(self, request):
+    image_id = int(request.matchdict['id'])
+    img = DATA.images[image_id]
+    return {'image': img}
+
 def init():
     p = argparse.ArgumentParser()
     p.add_argument('picture_path')
@@ -38,7 +44,9 @@ def run():
         'mako.directories': os.path.join(srcdir, 'templates'),
     }
     config = Configurator(settings=settings)
-    config.add_route('all', '/all')
+    config.add_static_view('image-data', DATA.picture_path)
+    config.add_route('all', '/image')
+    config.add_route('image', '/image/{id}')
     config.scan()
     app = config.make_wsgi_app()
     server = make_server('0.0.0.0', 8080, app)
