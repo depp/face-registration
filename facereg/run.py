@@ -5,6 +5,7 @@ from pyramid.view import view_config
 import argparse
 import os
 import sys
+import json
 from . import image
 
 srcdir = os.path.dirname(os.path.abspath(__file__))
@@ -27,7 +28,15 @@ def all_view(self, request):
 def image_view(self, request):
     image_id = int(request.matchdict['id'])
     img = DATA.images[image_id]
-    return {'image': img}
+    return {'request': request, 'image_id': image_id, 'image': img}
+
+@view_config(route_name='data')
+def data_view(self, request):
+    image_id = int(request.matchdict['id'])
+    img = DATA.images[image_id]
+    if request.method in ('GET', 'HEAD'):
+        info = {'orientation': img.get_orientation()}
+        return Response(json.dumps(info), content_type='application/json')
 
 def init():
     p = argparse.ArgumentParser()
@@ -48,6 +57,7 @@ def run():
     config.add_static_view('image-data', DATA.picture_path)
     config.add_route('all', '/image')
     config.add_route('image', '/image/{id}')
+    config.add_route('data', '/data/{id}')
     config.scan()
     app = config.make_wsgi_app()
     server = make_server('0.0.0.0', 8080, app)
