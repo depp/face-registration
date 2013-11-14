@@ -1,5 +1,6 @@
 var canvas, cxt, data, image;
 var counter = 2;
+var transformation;
 
 window.onload = function() {
 	canvas = document.getElementById("canvas");
@@ -7,6 +8,12 @@ window.onload = function() {
 	cxt = canvas.getContext('2d');
 	get_image();
 	get_data();
+	recompute_transformation();
+}
+
+function recompute_transformation() {
+	transformation = new Transformation();
+	transform(transformation);
 }
 
 function get_image() {
@@ -147,13 +154,26 @@ function redraw() {
 	transform(cxt);
 	cxt.drawImage(image, 0, 0);
 	cxt.restore();
+
+	var markers = data.markers;
+	if (markers) {
+		for (var i = 0; i < markers.length; i++) {
+			var pos = mat_vector(transformation.forward, markers[i]);
+			cxt.fillStyle = "rgb(255, 0, 0)";
+			cxt.fillRect(pos[0] - 5, pos[1] - 5, 10, 10);
+		}
+	}
 }
 
 function handle_click(event) {
 	var x = event.pageX - canvas.offsetLeft;
 	var y = event.pageY - canvas.offsetTop;
-	var t = new Transformation();
-	transform(t);
-	var v = mat_vector(t.inverse, [x, y]);
-	console.log(v[0], v[1]);
+	var v = mat_vector(transformation.inverse, [x, y]);
+	if (v[0] < 0 || v[0] > image.width ||
+		v[1] < 0 || v[1] > image.height)
+		return;
+	if (!data.markers)
+		data.markers = [];
+	data.markers.push(v);
+	redraw();
 }
