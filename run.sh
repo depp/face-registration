@@ -1,2 +1,2 @@
 #!/bin/sh
-python2 -m facereg.run ../2013-11-08/Dan\ Faces
+python -m facereg.run /home/dan/hyperlayer/facerec/face-registration/facereg/image

@@ -157,10 +157,28 @@ function redraw() {
 	cxt.fillRect(0, 0, canvas.width, canvas.height);
 	cxt.save();
 	transform(cxt);
-	cxt.drawImage(image, 0, 0);
-	cxt.restore();
+
+	var cwidth = canvas.width;
+	var cheight = canvas.height;
+	var iwidth = image.width;
+	var iheight = image.height;
+	
+
 
 	var markers = data.markers;
+	if (markers && markers.length == 2)
+    {
+    	cxt.translate(iwidth/2, iheight/2)
+	    cxt.rotate(calculateRotation(markers));
+	    cxt.drawImage(image, -iwidth/2, -iheight/2);
+	    cxt.translate(-iwidth/2, -iheight/2)
+	    cxt.restore();
+	    markers.length = 0
+	} else {
+	    cxt.drawImage(image, 0, 0);
+	    cxt.restore();
+	}
+	
 	if (markers) {
 		for (var i = 0; i < markers.length; i++) {
 			var pos = mat_vector(transformation.forward, markers[i]);
@@ -172,6 +190,16 @@ function redraw() {
 			cxt.fillRect(pos[0] - 5, pos[1] - 5, 10, 10);
 		}
 	}
+}
+
+function calculateRotation(markers) {
+    marker1 = markers[0]
+    marker2 = markers[1]
+    deltaX = marker1[0] - marker2[0]
+    deltaY = marker1[1] - marker2[1]
+    angle = Math.atan2(deltaX, deltaY)
+    console.log(angle)
+    return angle
 }
 
 function mouse_loc(event, clamp) {
