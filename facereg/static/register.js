@@ -1,10 +1,15 @@
 var canvas, cxt, data, image;
 var counter = 2;
 var transformation;
+var selection = null;
+var dragging = false;
+var CLICK_RADIUS = 12;
 
 window.onload = function() {
 	canvas = document.getElementById("canvas");
-	canvas.addEventListener('click', handle_click);
+	canvas.addEventListener('mousedown', handle_mousedown);
+	canvas.addEventListener('mousemove', handle_mousemove);
+	canvas.addEventListener('mouseup', handle_mouseup);
 	cxt = canvas.getContext('2d');
 	get_image();
 	get_data();
@@ -159,21 +164,69 @@ function redraw() {
 	if (markers) {
 		for (var i = 0; i < markers.length; i++) {
 			var pos = mat_vector(transformation.forward, markers[i]);
-			cxt.fillStyle = "rgb(255, 0, 0)";
+			if (i == selection) {
+				cxt.fillStyle = "rgb(255, 255, 0)";
+			} else {
+				cxt.fillStyle = "rgb(255, 0, 0)";
+			}
 			cxt.fillRect(pos[0] - 5, pos[1] - 5, 10, 10);
 		}
 	}
 }
 
-function handle_click(event) {
+function mouse_loc(event, clamp) {
 	var x = event.pageX - canvas.offsetLeft;
 	var y = event.pageY - canvas.offsetTop;
 	var v = mat_vector(transformation.inverse, [x, y]);
-	if (v[0] < 0 || v[0] > image.width ||
-		v[1] < 0 || v[1] > image.height)
+	if (clamp) {
+		v[0] = Math.max(0, Math.min(image.width, v[0]));
+		v[1] = Math.max(0, Math.min(image.height, v[1]));
+	} else {
+		if (v[0] < 0 || v[0] > image.width ||
+			v[1] < 0 || v[1] > image.height)
+			return null;
+	}
+	return v;
+}
+
+function dist2(u, v) {
+	var dx = u[0] - v[0], dy = u[1] - v[1];
+	return dx*dx + dy*dy;
+}
+
+function handle_mousedown(event) {
+	var pos = mouse_loc(event, false);
+	if (!pos)
 		return;
 	if (!data.markers)
-		data.markers = [];
-	data.markers.push(v);
+		data.markers = []
+	var markers = data.markers;
+	var spos = mat_vector(transformation.forward, pos);
+	selection = null;
+	for (var i = 0; i < markers.length; i++) {
+		var mpos = mat_vector(transformation.forward, markers[i]);
+		var d2 = dist2(spos, mpos);
+		if (d2 <= CLICK_RADIUS * CLICK_RADIUS) {
+			selection = i;
+			break;
+		}
+	}
+	if (selection === null) {
+		data.markers.push(pos);
+		selection = data.markers.length - 1;
+	}
+	dragging = true;
 	redraw();
+}
+
+function handle_mousemove(event) {
+	if (!dragging)
+		return;
+	var pos = mouse_loc(event, true);
+	data.markers[selection] = pos;
+	redraw();
+};
+
+function handle_mouseup(event) {
+	dragging = false;
 }
