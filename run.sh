@@ -1,2 +1,8 @@
 #!/bin/sh
-python -m facereg.run /home/dan/hyperlayer/facerec/face-registration/facereg/image
+if test ! -x "${PYTHON}" ; then
+    PYTHON=`which python2`
+fi
+if test ! -x "${PYTHON}" ; then
+    PYTHON=`which python`
+fi
+"${PYTHON}" -m facereg.run "$@"
