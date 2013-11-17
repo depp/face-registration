@@ -53,7 +53,8 @@ def run():
         'mako.directories': os.path.join(srcdir, 'templates'),
     }
     config = Configurator(settings=settings)
-    config.include('pyramid_mako')
+    # Necessary for Pyramid 1.5
+    # config.include('pyramid_mako')
     config.add_static_view('static', os.path.join(srcdir, 'static'))
     config.add_static_view('image-data', DATA.picture_path)
     config.add_route('all', '/image')
