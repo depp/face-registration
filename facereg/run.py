@@ -54,7 +54,10 @@ def run():
     }
     config = Configurator(settings=settings)
     # Necessary for Pyramid 1.5
-    # config.include('pyramid_mako')
+    try:
+        config.include('pyramid_mako')
+    except ImportError:
+        pass
     config.add_static_view('static', os.path.join(srcdir, 'static'))
     config.add_static_view('image-data', DATA.picture_path)
     config.add_route('all', '/image')
