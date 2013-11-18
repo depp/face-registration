@@ -1,5 +1,7 @@
 <%inherit file="layout.mako"/>
-<canvas id="canvas" width="500" height="500">
+<canvas id="register" width="500" height="500">
+</canvas>
+<canvas id="preview" width="500" height="500">
 </canvas>
 <script>
 var image_uri = "/image-data/${image.uri}";

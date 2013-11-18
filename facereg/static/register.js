@@ -1,19 +1,277 @@
-var canvas, cxt, data, image;
+// The registration canvas (interactive) and the preview canvas
+// (non-interactive).  Attributes:
+// * 'canvas': the canvas DOM element.
+// * 'cxt': the 2D drawing context.
+// * 'transformation': the transformation used to draw the image.
+var register, preview;
+
+// The persistent data for this image.  Attributes:
+// * 'orientation': the EXIF orientation for the image.
+// * 'markers': the markers on the image.
+var data;
+
+// The image element for this image.
+var global_image;
+
+// Counter for async element loading.
 var counter = 2;
-var transformation;
+
+// The index of the currently selected marker.
 var selection = null;
+
+// Whether we are currently dragging a marker around.
 var dragging = false;
+
+// The radius with which we can click on a marker to select it.
 var CLICK_RADIUS = 12;
 
+// The target position for the center of the markers
+var TARGET_SIZE = 0.2;
+// The target distance for the markers
+var TARGET_POS = [0.5, 0.4];
+
+// Capture events on a DOM object and pass them to a target object
+function capture_events(object, target, events) {
+	function handler(event) {
+		return target[event.type](event);
+	}
+	for (var i = 0; i < events.length; i++) {
+		object.addEventListener(events[i], handler);
+	}
+}
+
+// ImageView: draws the image in a canvas
+// Requires a 'transform' method to transform the image
+
+function ImageView(canvas, image) {
+	this.canvas = canvas;
+	this.cxt = canvas.getContext('2d');
+	this.image = image;
+}
+
+// Draw the image and the background
+ImageView.prototype.draw_image = function() {
+	var cxt = this.cxt;
+	cxt.fillStyle = "rgb(40, 40, 40)";
+	cxt.fillRect(0, 0, this.canvas.width, this.canvas.height);
+	cxt.save();
+	this.transform(cxt);
+	cxt.drawImage(this.image, 0, 0);
+	cxt.restore();
+}
+
+// Calculate the mouse location for an event, in image coordinates
+// If mode is 'clamp', then it will be clamped to image bounds
+// If mode is 'check', then result will be null if it is out of bounds
+// If mode is 'full', then result will always be returned
+ImageView.prototype.mouse_loc = function(event, mode) {
+	var x = event.pageX - this.canvas.offsetLeft;
+	var y = event.pageY - this.canvas.offsetTop;
+	var v = this.transformation.apply_reverse([x, y]);
+	switch (mode) {
+	case 'clamp':
+		v[0] = Math.max(0, Math.min(this.image.width, v[0]));
+		v[1] = Math.max(0, Math.min(this.image.height, v[1]));
+		break;
+	case 'check':
+		if (v[0] < 0 || v[0] > this.image.width ||
+			v[1] < 0 || v[1] > this.image.height)
+			return null;
+		break;
+	case 'full':
+		break;
+	default:
+		throw "Invalid mode";
+	}
+	return v;
+}
+
+// RegisterView: view for creating the points for registration
+
+RegisterView = function(canvas, image) {
+	ImageView.call(this, canvas, image);
+	capture_events(canvas, this, ['mousedown', 'mousemove', 'mouseup']);
+}
+
+RegisterView.prototype = Object.create(ImageView.prototype);
+RegisterView.prototype.constructor = RegisterView;
+
+RegisterView.prototype.mousedown = function(event) {
+	var pos = this.mouse_loc(event, 'check');
+	if (!pos)
+		return;
+	if (!data.markers)
+		data.markers = []
+	var markers = data.markers;
+	var spos = this.transformation.apply(pos);
+	selection = null;
+	for (var i = 0; i < markers.length; i++) {
+		var mpos = this.transformation.apply(markers[i]);
+		var d2 = dist2(spos, mpos);
+		if (d2 <= CLICK_RADIUS * CLICK_RADIUS) {
+			selection = i;
+			break;
+		}
+	}
+	if (selection === null) {
+		data.markers.push(pos);
+		selection = data.markers.length - 1;
+	}
+	dragging = true;
+	update();
+}
+
+RegisterView.prototype.mousemove = function(event) {
+	if (!dragging)
+		return;
+	var pos = this.mouse_loc(event, 'clamp');
+	data.markers[selection] = pos;
+	update();
+};
+
+RegisterView.prototype.mouseup = function(event) {
+	dragging = false;
+}
+
+RegisterView.prototype.transform = function(obj) {
+	var cwidth = this.canvas.width;
+	var cheight = this.canvas.height;
+	var iwidth = this.image.width;
+	var iheight = this.image.height;
+	var swapxy = false;
+
+	obj.translate(cwidth/2, cheight/2);
+	switch (data.orientation) {
+	case 1:
+		obj.rotate(Math.PI);
+		break;
+	case 3:
+		break;
+	case 6:
+		obj.rotate(Math.PI * 0.5);
+		swapxy = true;
+		break;
+	case 8:
+		obj.rotate(Math.PI * +0.5);
+		swapxy = true;
+		break;
+	}
+	var scalex, scaley;
+	if (swapxy) {
+		scalex = cwidth / iheight;
+		scaley = cheight / iwidth;
+	} else {
+		scalex = cwidth / iwidth;
+		scaley = cheight / iheight;
+	}
+	var scale = Math.min(scalex, scaley);
+	obj.scale(scale, scale);
+	obj.translate(-iwidth/2, -iheight/2);
+}
+
+RegisterView.prototype.update = function() {
+	this.transformation = new Transformation();
+	this.transform(this.transformation);
+	this.draw();
+}
+
+RegisterView.prototype.draw = function() {
+	this.draw_image();
+
+	var cxt = this.cxt;
+	var markers = data.markers;
+	if (markers) {
+		for (var i = 0; i < markers.length; i++) {
+			var pos = this.transformation.apply(markers[i]);
+			if (i == selection) {
+				cxt.fillStyle = "rgb(255, 255, 0)";
+			} else {
+				cxt.fillStyle = "rgb(255, 0, 0)";
+			}
+			cxt.fillRect(pos[0] - 5, pos[1] - 5, 10, 10);
+		}
+	}
+}
+
+// PreviewView: view showing a preview of the transformed image
+
+PreviewView = function(canvas, image) {
+	ImageView.call(this, canvas, image);
+}
+
+PreviewView.prototype = Object.create(ImageView.prototype);
+PreviewView.prototype.constructor = PreviewView;
+
+PreviewView.prototype.transform = function(obj) {
+	var cwidth = this.canvas.width;
+	var cheight = this.canvas.height;
+	var iwidth = this.image.width;
+	var iheight = this.image.height;
+
+
+	obj.translate(TARGET_POS[0] * cwidth, TARGET_POS[1] * cheight);
+	obj.rotate(this.stats.angle);
+	var scale = (TARGET_SIZE * cwidth) / this.stats.size;
+	obj.scale(scale, scale);
+	obj.translate(-this.stats.center[0], -this.stats.center[1]);
+};
+
+PreviewView.prototype.update = function() {
+	var markers = data.markers;
+	if (markers && markers.length == 2) {
+		this.stats = {
+			'center': [(markers[0][0] + markers[1][0])/2,
+					   (markers[0][1] + markers[1][1])/2],
+			'angle': Math.atan2(markers[0][1] - markers[1][1],
+								markers[0][0] - markers[1][0]),
+			'size': dist(markers[0], markers[1])
+		};
+	} else {
+		this.stats = null;
+	}
+
+	this.draw();
+}
+
+PreviewView.prototype.draw = function() {
+	var cwidth = this.canvas.width;
+	var cheight = this.canvas.height;
+	var cxt = this.cxt;
+
+	if (this.stats) {
+		this.draw_image();
+
+		var y = cheight * TARGET_POS[1];
+		var x0 = cwidth * 0.5 * (1 - TARGET_SIZE);
+		var x1 = cwidth * 0.5 * (1 + TARGET_SIZE);
+		cxt.strokeStyle = 'rgb(200, 200, 200)';
+		cxt.beginPath();
+		cxt.moveTo(0, y);
+		cxt.lineTo(cwidth, y);
+		cxt.moveTo(x0, 0);
+		cxt.lineTo(x0, cheight);
+		cxt.moveTo(x1, 0);
+		cxt.lineTo(x1, cheight);
+		cxt.stroke();
+	} else {
+		cxt.fillStyle = 'rgb(40, 40, 40)';
+		cxt.fillRect(0, 0, cwidth, cheight);
+
+		cxt.strokeStyle = 'rgb(200, 200, 200)';
+		cxt.beginPath();
+		cxt.moveTo(0, 0);
+		cxt.lineTo(cwidth, cheight);
+		cxt.moveTo(0, cheight);
+		cxt.lineTo(cwidth, 0);
+		cxt.stroke();
+	}
+}
+
+// ============================================================
+
 window.onload = function() {
-	canvas = document.getElementById("canvas");
-	canvas.addEventListener('mousedown', handle_mousedown);
-	canvas.addEventListener('mousemove', handle_mousemove);
-	canvas.addEventListener('mouseup', handle_mouseup);
-	cxt = canvas.getContext('2d');
 	get_image();
 	get_data();
-	recompute_transformation();
 }
 
 function recompute_transformation() {
@@ -22,13 +280,13 @@ function recompute_transformation() {
 }
 
 function get_image() {
-	image = new Image();
-	image.onload = function(e) {
+	global_image = new Image();
+	global_image.onload = function(e) {
 		counter--;
 		if (counter == 0)
-			redraw();
+			loaded();
 	}
-	image.src = image_uri;
+	global_image.src = image_uri;
 }
 
 function get_data() {
@@ -41,12 +299,25 @@ function get_data() {
 			data = JSON.parse(req.response);
 			counter--;
 			if (counter == 0)
-				redraw();
+				loaded();
 		} else {
 			console.log("Error!");
 		}
 	}
 	req.send(null);
+}
+
+function loaded() {
+	register = new RegisterView(
+		document.getElementById('register'), global_image);
+	preview = new PreviewView(
+		document.getElementById('preview'), global_image);
+	update();
+}
+
+function update() {
+	register.update();
+	preview.update();
 }
 
 // Matrix math, using 3x2 matrices and homogeneous coordinates.
@@ -115,146 +386,21 @@ Transformation.prototype.scale = function(x, y) {
 	this._apply_matrix(mat_scale(x, y), mat_scale(1/x, 1/y));
 }
 
-// Transform the image so it is centered and resized correctly.
-function transform(obj) {
-	var cwidth = canvas.width;
-	var cheight = canvas.height;
-	var iwidth = image.width;
-	var iheight = image.height;
-	var swapxy = false;
-
-	obj.translate(cwidth/2, cheight/2);
-	switch (data.orientation) {
-	case 1:
-		obj.rotate(Math.PI);
-		break;
-	case 3:
-		break;
-	case 6:
-		obj.rotate(Math.PI * 0.5);
-		swapxy = true;
-		break;
-	case 8:
-		obj.rotate(Math.PI * +0.5);
-		swapxy = true;
-		break;
-	}
-	var scalex, scaley;
-	if (swapxy) {
-		scalex = cwidth / iheight;
-		scaley = cheight / iwidth;
-	} else {
-		scalex = cwidth / iwidth;
-		scaley = cheight / iheight;
-	}
-	var scale = Math.min(scalex, scaley);
-	obj.scale(scale, scale);
-	obj.translate(-iwidth/2, -iheight/2);
+Transformation.prototype.apply = function(pos) {
+	return mat_vector(this.forward, pos);
 }
 
-function redraw() {
-	cxt.fillStyle = "rgb(40, 40, 40)";
-	cxt.fillRect(0, 0, canvas.width, canvas.height);
-	cxt.save();
-	transform(cxt);
-
-	var cwidth = canvas.width;
-	var cheight = canvas.height;
-	var iwidth = image.width;
-	var iheight = image.height;
-	
-
-
-	var markers = data.markers;
-	if (markers && markers.length == 2)
-    {
-    	cxt.translate(iwidth/2, iheight/2)
-	    cxt.rotate(calculateRotation(markers));
-	    cxt.drawImage(image, -iwidth/2, -iheight/2);
-	    cxt.translate(-iwidth/2, -iheight/2)
-	    cxt.restore();
-	    markers.length = 0
-	} else {
-	    cxt.drawImage(image, 0, 0);
-	    cxt.restore();
-	}
-	
-	if (markers) {
-		for (var i = 0; i < markers.length; i++) {
-			var pos = mat_vector(transformation.forward, markers[i]);
-			if (i == selection) {
-				cxt.fillStyle = "rgb(255, 255, 0)";
-			} else {
-				cxt.fillStyle = "rgb(255, 0, 0)";
-			}
-			cxt.fillRect(pos[0] - 5, pos[1] - 5, 10, 10);
-		}
-	}
+Transformation.prototype.apply_reverse = function(pos) {
+	return mat_vector(this.inverse, pos);
 }
 
-function calculateRotation(markers) {
-    marker1 = markers[0]
-    marker2 = markers[1]
-    deltaX = marker1[0] - marker2[0]
-    deltaY = marker1[1] - marker2[1]
-    angle = Math.atan2(deltaX, deltaY)
-    console.log(angle)
-    return angle
-}
-
-function mouse_loc(event, clamp) {
-	var x = event.pageX - canvas.offsetLeft;
-	var y = event.pageY - canvas.offsetTop;
-	var v = mat_vector(transformation.inverse, [x, y]);
-	if (clamp) {
-		v[0] = Math.max(0, Math.min(image.width, v[0]));
-		v[1] = Math.max(0, Math.min(image.height, v[1]));
-	} else {
-		if (v[0] < 0 || v[0] > image.width ||
-			v[1] < 0 || v[1] > image.height)
-			return null;
-	}
-	return v;
-}
-
+// Calculate the squared distance between two points.
 function dist2(u, v) {
 	var dx = u[0] - v[0], dy = u[1] - v[1];
 	return dx*dx + dy*dy;
 }
 
-function handle_mousedown(event) {
-	var pos = mouse_loc(event, false);
-	if (!pos)
-		return;
-	if (!data.markers)
-		data.markers = []
-	var markers = data.markers;
-	var spos = mat_vector(transformation.forward, pos);
-	selection = null;
-	for (var i = 0; i < markers.length; i++) {
-		var mpos = mat_vector(transformation.forward, markers[i]);
-		var d2 = dist2(spos, mpos);
-		if (d2 <= CLICK_RADIUS * CLICK_RADIUS) {
-			selection = i;
-			break;
-		}
-	}
-	if (selection === null) {
-		data.markers.push(pos);
-		selection = data.markers.length - 1;
-	}
-	dragging = true;
-	redraw();
-}
-
-function handle_mousemove(event) {
-	if (!dragging)
-		return;
-	var pos = mouse_loc(event, true);
-	data.markers[selection] = pos;
-	redraw();
-};
-
-function handle_mouseup(event) {
-	dragging = false;
+// Calculate the distance between two points.
+function dist(u, v) {
+	return Math.sqrt(dist2(u, v));
 }
